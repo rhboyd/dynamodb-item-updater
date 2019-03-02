@@ -1,0 +1,153 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+    AWS Serverless Application
+
+    Sample SAM Template for AWS Serverless Application
+
+Parameters:
+  SourceDynamoTableName:
+    Type: String
+    Description: Name of the DynamoDB Table to Scan
+  CrossAccountCondition:
+    Type: String
+    Description: Table To Scan exists in a different account from where the lambda will execute
+    Default: "false"
+  DynamoReadRole:
+    Type: String
+    Description: Role needed to Scan DynamoDB Table, only needed if CrossAccountCondition is true
+    Default: ""
+
+Conditions:
+  CrossAccount: !Equals [ !Ref CrossAccountCondition, true ]
+
+Resources:
+    DynamoItemUpdateFunction:
+        Type: AWS::Serverless::Function
+        Properties:
+            CodeUri: updater/
+            Handler: app.lambda_handler
+            Runtime: python3.6
+            Timeout: 300
+            Policies:
+              - AWSLambdaBasicExecutionRole
+                # If we are using a cross-account role, then the lambda just needs permission to assume the role
+                # in the remote account. Otherwise, the lambda just needs permission to
+              - Fn::If:
+                - !Ref CrossAccount
+                - Version: '2012-10-17'
+                  Statement:
+                      - Effect: Allow
+                        Action: "sts:AssumeRole"
+                        Resource:
+                          - !Ref DynamoReadRole
+                -
+                  - Version: '2012-10-17'
+                    Statement:
+                      - Effect: Allow
+                        Action:
+                          - dynamodb:DeleteItem
+                          - dynamodb:PutItem
+                          - dynamodb:Scan
+                          - dynamodb:Query
+                          - dynamodb:UpdateItem
+                        Resource:
+                          - Fn::Join:
+                              - ''
+                              - - 'arn:aws:dynamodb:'
+                                - Ref: 'AWS::Region'
+                                - ':'
+                                - Ref: 'AWS::AccountId'
+                                - ':table/'
+                                - Ref: SourceDynamoTableName
+                          - Fn::Join:
+                              - ''
+                              - - 'arn:aws:dynamodb:'
+                                - Ref: 'AWS::Region'
+                                - ':'
+                                - Ref: 'AWS::AccountId'
+                                - ':table/'
+                                - Ref: SourceDynamoTableName
+                                - '*'
+            Environment:
+              Variables:
+                DYNAMO_READ_ROLE:
+                  Fn::If:
+                    - !Ref CrossAccount
+                    - !Ref DynamoReadRole
+                    - !Ref AWS::NoValue
+                DYNAMO_TABLE_NAME: !Ref SourceDynamoTableName
+
+    StatesExecutionRole:
+      Type: "AWS::IAM::Role"
+      Properties:
+        AssumeRolePolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Effect: "Allow"
+              Principal:
+                Service:
+                  - "states.amazonaws.com"
+              Action:
+                - "sts:AssumeRole"
+        Path: "/"
+        Policies:
+          - PolicyName: "executeLambda"
+            PolicyDocument:
+              Version: "2012-10-17"
+              Statement:
+                - Effect: "Allow"
+                  Action: "lambda:InvokeFunction"
+                  Resource: !GetAtt [ DynamoItemUpdateFunction, Arn ]
+
+    MyStateMachine:
+      Type: "AWS::StepFunctions::StateMachine"
+      Properties:
+        DefinitionString:
+          !Sub
+          - |-
+            {
+              "Comment": "Dynamo Updater",
+              "StartAt": "Worker",
+              "Version": "1.0",
+              "States":
+                {
+
+                    "Worker": {
+                      "Type": "Task",
+                      "Resource": "${lambdaArn}",
+                      "ResultPath": "$.Result",
+                      "Next": "While Loop Condition"
+                    },
+
+                    "While Loop Condition": {
+                      "Type": "Choice",
+                      "Choices": [
+                        {
+                          "Not": {
+                            "Variable": "$.Result.LastEvaluatedKey",
+                            "StringEquals": "DONE"
+                          },
+                          "Next": "SecondaryWorker"
+                        }
+                      ],
+                      "Default": "Succeed"
+                    },
+
+                    "SecondaryWorker": {
+                      "Type": "Task",
+                      "Resource": "${lambdaArn}",
+                      "Parameters": {
+                        "LastEvaluatedKey.$": "$.Result.LastEvaluatedKey"
+                      },
+                      "ResultPath": "$.Result",
+                      "Next": "While Loop Condition"
+                    },
+
+                    "Succeed": {
+                          "Type": "Succeed"
+                    }
+                }
+            }
+          - {lambdaArn: !GetAtt [ DynamoItemUpdateFunction, Arn ]}
+        RoleArn: !GetAtt [ StatesExecutionRole, Arn ]

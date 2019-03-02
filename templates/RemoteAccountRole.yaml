@@ -1,0 +1,47 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+    Creates a role that can read from DynamoDB.
+
+Parameters:
+  TABLEARN:
+    Type: String
+    Description: "Table that we grant read access to"
+  CLIENTS:
+    Type: CommaDelimitedList
+    Description: List of client accounts for API
+
+Resources:
+  ReadDynamoDB:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              AWS: !Ref CLIENTS
+            Action:
+              - "sts:AssumeRole"
+      Path: "/"
+      Policies:
+        - PolicyName: "readTable"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - dynamodb:DeleteItem
+                  - dynamodb:PutItem
+                  - dynamodb:Scan
+                  - dynamodb:Query
+                  - dynamodb:UpdateItem
+                Resource: !Ref TABLEARN
+
+Outputs:
+    ReadDynamoDBArn:
+      Description: "Arn for Role that can Read Cognito"
+      Value:
+        Fn::GetAtt:
+          - ReadDynamoDB
+          - Arn
