@@ -14,12 +14,13 @@ DYNAMO_READ_ROLE = get_env_var("DYNAMO_READ_ROLE")
 
 
 def _operation_to_perform(item):
-    time.sleep(1.0 / 10.0)
+    time.sleep(0.5)
     return 0
 
 
 def _query_dynamo(ddb_client, context, start_key=None):
     global DYNAMO_TABLE_NAME
+    print("reading from table {}".format(DYNAMO_TABLE_NAME))
 
     paginator = ddb_client.get_paginator('scan')
 
@@ -39,14 +40,16 @@ def _query_dynamo(ddb_client, context, start_key=None):
     for page in page_iterator:
         if 'LastEvaluatedKey' in page:
             LastEvaluatedKey = page['LastEvaluatedKey']
-        print("Time remaining: {}".format(context.get_remaining_time_in_millis()))
+        else:
+            print("on last page")
+        print("Time remaining: {} to process {} items".format(context.get_remaining_time_in_millis(), len(page['Items'])))
         for item in page['Items']:
             my_response = _operation_to_perform(item)
         time_remaining = context.get_remaining_time_in_millis()
         if time_remaining < (60 * 1000) and 'LastEvaluatedKey' in page:
             return LastEvaluatedKey
-        else:
-            return 'DONE'
+
+    return 'DONE'
 
 
 def _get_ddb_client():
@@ -82,6 +85,7 @@ def lambda_handler(event, context):
             print("continuing from {}".format(event['LastEvaluatedKey']))
             return {'LastEvaluatedKey': _query_dynamo(ddb_client, context, start_key=event['LastEvaluatedKey'])}
         else:
+            print("starting to parse {}".format(DYNAMO_TABLE_NAME))
             return {'LastEvaluatedKey': _query_dynamo(ddb_client, context)}
     except Exception as e:
         raise e

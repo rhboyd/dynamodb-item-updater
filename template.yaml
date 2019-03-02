@@ -31,20 +31,20 @@ Resources:
             Timeout: 300
             Policies:
               - AWSLambdaBasicExecutionRole
-                # If we are using a cross-account role, then the lambda just needs permission to assume the role
-                # in the remote account. Otherwise, the lambda just needs permission to
-              - Fn::If:
-                - !Ref CrossAccount
-                - Version: '2012-10-17'
-                  Statement:
-                      - Effect: Allow
+              - Version: '2012-10-17'
+                Statement:
+                  - Fn::If:
+                      - CrossAccount
+                      -
+                        Effect: Allow
                         Action: "sts:AssumeRole"
-                        Resource:
-                          - !Ref DynamoReadRole
-                -
-                  - Version: '2012-10-17'
-                    Statement:
-                      - Effect: Allow
+                        Resource: !Ref DynamoReadRole
+                      - !Ref AWS::NoValue
+                  - Fn::If:
+                      - CrossAccount
+                      - !Ref AWS::NoValue
+                      -
+                        Effect: Allow
                         Action:
                           - dynamodb:DeleteItem
                           - dynamodb:PutItem
@@ -73,7 +73,7 @@ Resources:
               Variables:
                 DYNAMO_READ_ROLE:
                   Fn::If:
-                    - !Ref CrossAccount
+                    - CrossAccount
                     - !Ref DynamoReadRole
                     - !Ref AWS::NoValue
                 DYNAMO_TABLE_NAME: !Ref SourceDynamoTableName
