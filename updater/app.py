@@ -1,7 +1,7 @@
 from builtins import Exception
 
 import boto3
-import time
+import json
 import os
 
 
@@ -11,10 +11,32 @@ def get_env_var(name):
 
 DYNAMO_TABLE_NAME = get_env_var("DYNAMO_TABLE_NAME")
 DYNAMO_READ_ROLE = get_env_var("DYNAMO_READ_ROLE")
+LAMBDA_FUNCTION_ARN = get_env_var("LAMBDA_FUNCTION_ARN")
+DYNAMO_PAGE_LIMIT = int(get_env_var("DYNAMO_PAGE_LIMIT"))
 
 
-def _operation_to_perform(item):
-    time.sleep(0.5)
+def _create_dynamo_stream_like_object(item):
+    return {
+        "eventName": "INSERT",
+        "eventSource": "aws:dynamodb",
+        "dynamodb": {
+            "NewImage": item
+        },
+        "StreamViewType": "BACKFILL_IMAGES"
+    }
+
+
+def _operation_to_perform(items):
+    lambda_client = boto3.client('lambda')
+    list_of_items = [_create_dynamo_stream_like_object(i) for i in items]
+
+    payload = json.dumps({"Records": list_of_items}).encode('utf-8')
+    response = lambda_client.invoke(
+        FunctionName=LAMBDA_FUNCTION_ARN,
+        InvocationType='RequestResponse',
+        LogType='None',
+        Payload=payload
+    )
     return 0
 
 
@@ -27,12 +49,12 @@ def _query_dynamo(ddb_client, context, start_key=None):
     if start_key:
         operation_parameters = {
             'ExclusiveStartKey': start_key,
-            'Limit': 100,
+            'Limit': DYNAMO_PAGE_LIMIT,
             'TableName': DYNAMO_TABLE_NAME
         }
     else:
         operation_parameters = {
-            'Limit': 100,
+            'Limit': DYNAMO_PAGE_LIMIT,
             'TableName': DYNAMO_TABLE_NAME
         }
     page_iterator = paginator.paginate(**operation_parameters)
@@ -43,8 +65,7 @@ def _query_dynamo(ddb_client, context, start_key=None):
         else:
             print("on last page")
         print("Time remaining: {} to process {} items".format(context.get_remaining_time_in_millis(), len(page['Items'])))
-        for item in page['Items']:
-            my_response = _operation_to_perform(item)
+        _operation_to_perform(page['Items'])
         time_remaining = context.get_remaining_time_in_millis()
         if time_remaining < (60 * 1000) and 'LastEvaluatedKey' in page:
             return LastEvaluatedKey

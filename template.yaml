@@ -6,6 +6,15 @@ Description: >
     Sample SAM Template for AWS Serverless Application
 
 Parameters:
+  LambdaProcessorArn:
+    Type: String
+    Description: |
+      Arn for the Lambda that will do the processing on the DynamoDB Table Items.
+      This Lambda should expect invocations that conform to the DynamoDB Stream invocation format.
+  DynamoPageSize:
+    Type: Number
+    Description: Number of items in each batch that your lambda processes
+    Default: 100
   SourceDynamoTableName:
     Type: String
     Description: Name of the DynamoDB Table to Scan
@@ -33,6 +42,10 @@ Resources:
               - AWSLambdaBasicExecutionRole
               - Version: '2012-10-17'
                 Statement:
+                  - Effect: Allow
+                    Action:
+                      - lambda:InvokeFunction
+                    Resource: !Ref LambdaProcessorArn
                   - Fn::If:
                       - CrossAccount
                       -
@@ -77,6 +90,8 @@ Resources:
                     - !Ref DynamoReadRole
                     - !Ref AWS::NoValue
                 DYNAMO_TABLE_NAME: !Ref SourceDynamoTableName
+                LAMBDA_FUNCTION_ARN: !Ref LambdaProcessorArn
+                DYNAMO_PAGE_LIMIT: !Ref DynamoPageSize
 
     StatesExecutionRole:
       Type: "AWS::IAM::Role"

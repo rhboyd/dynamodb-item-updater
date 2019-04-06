@@ -1,0 +1,17 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+    AWS Serverless Application
+
+    Sample SAM Template for AWS Serverless Application
+
+Resources:
+    TestFunction:
+        Type: AWS::Serverless::Function
+        Properties:
+            CodeUri: util/
+            Handler: test_processor_app.lambda_handler
+            Runtime: python3.7
+            Timeout: 900
+            Policies:
+              - AWSLambdaBasicExecutionRole
